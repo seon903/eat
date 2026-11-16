@@ -1,6 +1,7 @@
 """말풍선, 폭죽, 기본 캐릭터 그림."""
 from __future__ import annotations
 
+import datetime as dt
 import math
 import random
 
@@ -203,9 +204,11 @@ class ShoutBubble(BubbleBase):
 class MenuBubble(BubbleBase):
     heart_toggled = Signal(str, str, bool)  # corner, item, on
     corner_changed = Signal(str)
+    holiday_shown = Signal()
 
     def __init__(self):
         super().__init__(popup=True)
+        self.menus = {}
         self.setMinimumWidth(250)
         self.setMaximumWidth(340)
         self.hidden_at = 0.0
@@ -281,15 +284,14 @@ class MenuBubble(BubbleBase):
 
     # -- 데이터
     def show_days(self, menus: dict, date, hearts, corner, today):
-        """menus 전체를 받아 date(없으면 가장 가까운 날)부터 보여준다. ◀ ▶로 이동."""
-        self.days = [menus[k] for k in sorted(menus)]
-        self.hearts, self.today = hearts, today
-        dates = [d.date for d in self.days]
-        if date in dates:
-            self.idx = dates.index(date)
-        else:  # 오늘이 없으면 다음 날, 그것도 없으면 마지막 날
-            later = [i for i, d in enumerate(dates) if d > date]
-            self.idx = later[0] if later else len(dates) - 1
+        """하루씩 ◀ ▶로 이동. 식단표 앞뒤 하루(주말 포함)와 오늘까지 볼 수 있고,
+        엑셀에 메뉴가 없는 날은 '회사 안 나오는 날'."""
+        self.menus, self.hearts, self.today = menus, hearts, today
+        keys = sorted(menus)
+        lo = min(keys[0] - dt.timedelta(days=1), today)
+        hi = max(keys[-1] + dt.timedelta(days=2), today)
+        self.days = [lo + dt.timedelta(days=i) for i in range((hi - lo).days + 1)]
+        self.idx = self.days.index(date) if date in self.days else 0
         self.corner = corner
         self._render()
 
@@ -300,26 +302,42 @@ class MenuBubble(BubbleBase):
         self._render()
 
     def _render(self):
-        day = self.day = self.days[self.idx]
-        d = day.date
-        diff = (d - self.today).days if self.today else None
-        rel = {0: "오늘", -1: "어제", 1: "내일"}.get(diff)
+        d = self.days[self.idx]
+        rel = {0: "오늘", -1: "어제", 1: "내일"}.get((d - self.today).days)
         label = f"{d.month}월 {d.day}일 ({WEEK[d.weekday()]})"
-        if rel == "오늘":
-            self.title.setText(f"🍚 {label} 오늘의 메뉴")
-        elif rel:
-            self.title.setText(f"{label} · {rel}")
-        else:
-            self.title.setText(label)
+        self.title.setText(f"{label} · {rel}" if rel else label)
         self.nav["prev"].show()
         self.nav["next"].show()
         self.nav["prev"].setEnabled(self.idx > 0)
         self.nav["next"].setEnabled(self.idx < len(self.days) - 1)
+        day = self.menus.get(d)
+        if day is None:  # 메뉴 없는 날 = 휴일
+            self.day = None
+            for b in self.tab_btns.values():
+                b.hide()
+            self.tags.hide()
+            self._clear_list()
+            self.message.setFont(font(15, True))
+            self.message.setAlignment(Qt.AlignCenter)
+            self.message.setStyleSheet("color:#e2557f;padding:10px 0;")
+            self.message.setText("회사 안 나오는 날! 🎉")
+            self.message.show()
+            self._relayout()
+            self.holiday_shown.emit()
+            return
+        self.day = day
         self.message.hide()
         for b in self.tab_btns.values():
             b.show()
         corner = self.corner if self.corner in day.corners else next(iter(day.corners))
         self.select_corner(corner)
+
+    def _relayout(self):
+        self.inner.adjustSize()
+        if self.isVisible() and self._anchor:
+            self.place_near(*self._anchor)
+        else:
+            self.adjustSize()
 
     def show_message(self, title: str, text: str):
         self.day = None
@@ -330,6 +348,9 @@ class MenuBubble(BubbleBase):
             b.hide()
         self.tags.hide()
         self._clear_list()
+        self.message.setFont(font(11))
+        self.message.setAlignment(Qt.AlignLeft)
+        self.message.setStyleSheet(f"color:{TEXT};")
         self.message.setText(text)
         self.message.show()
 
