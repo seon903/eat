@@ -176,6 +176,8 @@ class Controller:
         self.menu_bubble = MenuBubble()
         self.menu_bubble.heart_toggled.connect(self.on_heart)
         self.menu_bubble.holiday_shown.connect(self.play_fireworks)
+        self.menu_bubble.day_rendered.connect(self.on_day_rendered)
+        self.menu_bubble.closed.connect(self.on_bubble_closed)
         self.shout = ShoutBubble()
         self.shout.clicked.connect(self.on_click)
         self.fireworks = Fireworks()
@@ -326,6 +328,20 @@ class Controller:
     def play_fireworks(self):
         self.fireworks.play(self.char.geometry().center())
         self.char.raise_()
+
+    def on_day_rendered(self, holiday: bool):
+        """말풍선에서 보고 있는 날에 맞춰 표정 변경 (휴일이면 휴일/기쁨 이미지)."""
+        if self.alarm_active:
+            return
+        self.mood_timer.stop()
+        if holiday:
+            self.char.set_mood("holiday")
+        else:
+            self.restore_mood()
+
+    def on_bubble_closed(self):
+        if not self.alarm_active and not self.mood_timer.isActive():
+            self.restore_mood()
 
     def on_heart(self, corner, item, on):
         if on:
