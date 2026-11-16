@@ -205,6 +205,8 @@ class MenuBubble(BubbleBase):
     heart_toggled = Signal(str, str, bool)  # corner, item, on
     corner_changed = Signal(str)
     holiday_shown = Signal()
+    day_rendered = Signal(bool)  # True = 휴일인 날을 보는 중
+    closed = Signal()
 
     def __init__(self):
         super().__init__(popup=True)
@@ -323,6 +325,7 @@ class MenuBubble(BubbleBase):
             self.message.setText("회사 안 나오는 날! 🎉")
             self.message.show()
             self._relayout()
+            self.day_rendered.emit(True)
             self.holiday_shown.emit()
             return
         self.day = day
@@ -331,6 +334,7 @@ class MenuBubble(BubbleBase):
             b.show()
         corner = self.corner if self.corner in day.corners else next(iter(day.corners))
         self.select_corner(corner)
+        self.day_rendered.emit(False)
 
     def _relayout(self):
         self.inner.adjustSize()
@@ -430,6 +434,7 @@ class MenuBubble(BubbleBase):
 
         self.hidden_at = time.monotonic()
         super().hideEvent(e)
+        self.closed.emit()
 
 
 # ---------------------------------------------------------------- 폭죽
