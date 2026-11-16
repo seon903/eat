@@ -216,10 +216,33 @@ class MenuBubble(BubbleBase):
         lay.setContentsMargins(4, 2, 4, 2)
         lay.setSpacing(6)
 
+        self.days = []  # 날짜순 DayMenu 목록
+        self.idx = 0
+        self.today = None
+
+        head = QHBoxLayout()
+        head.setSpacing(2)
+        self.nav = {}
+        for key, txt, delta in (("prev", "◀", -1), ("next", "▶", 1)):
+            b = QPushButton(txt)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFixedSize(QSize(26, 26))
+            b.setFont(font(10))
+            b.setStyleSheet(
+                "QPushButton{border:none;border-radius:13px;background:#ffe3ec;color:#c76b8a;}"
+                "QPushButton:hover{background:#ffcadb;}"
+                "QPushButton:disabled{background:transparent;color:#eedde3;}"
+            )
+            b.clicked.connect(lambda _=False, d=delta: self.go(d))
+            self.nav[key] = b
         self.title = QLabel()
         self.title.setFont(font(12, True))
+        self.title.setAlignment(Qt.AlignCenter)
         self.title.setStyleSheet(f"color:{TEXT};")
-        lay.addWidget(self.title)
+        head.addWidget(self.nav["prev"])
+        head.addWidget(self.title, 1)
+        head.addWidget(self.nav["next"])
+        lay.addLayout(head)
 
         tabs = QHBoxLayout()
         tabs.setSpacing(6)
@@ -257,20 +280,52 @@ class MenuBubble(BubbleBase):
         lay.addWidget(self.message)
 
     # -- 데이터
-    def show_day(self, day, hearts, corner):
-        self.day, self.hearts = day, hearts
+    def show_days(self, menus: dict, date, hearts, corner, today):
+        """menus 전체를 받아 date(없으면 가장 가까운 날)부터 보여준다. ◀ ▶로 이동."""
+        self.days = [menus[k] for k in sorted(menus)]
+        self.hearts, self.today = hearts, today
+        dates = [d.date for d in self.days]
+        if date in dates:
+            self.idx = dates.index(date)
+        else:  # 오늘이 없으면 다음 날, 그것도 없으면 마지막 날
+            later = [i for i, d in enumerate(dates) if d > date]
+            self.idx = later[0] if later else len(dates) - 1
+        self.corner = corner
+        self._render()
+
+    def go(self, delta):
+        if not self.days:
+            return
+        self.idx = max(0, min(len(self.days) - 1, self.idx + delta))
+        self._render()
+
+    def _render(self):
+        day = self.day = self.days[self.idx]
         d = day.date
-        self.title.setText(f"🍚 {d.month}월 {d.day}일 ({WEEK[d.weekday()]}) 오늘의 메뉴")
+        diff = (d - self.today).days if self.today else None
+        rel = {0: "오늘", -1: "어제", 1: "내일"}.get(diff)
+        label = f"{d.month}월 {d.day}일 ({WEEK[d.weekday()]})"
+        if rel == "오늘":
+            self.title.setText(f"🍚 {label} 오늘의 메뉴")
+        elif rel:
+            self.title.setText(f"{label} · {rel}")
+        else:
+            self.title.setText(label)
+        self.nav["prev"].show()
+        self.nav["next"].show()
+        self.nav["prev"].setEnabled(self.idx > 0)
+        self.nav["next"].setEnabled(self.idx < len(self.days) - 1)
         self.message.hide()
         for b in self.tab_btns.values():
             b.show()
-        if corner not in day.corners:
-            corner = next(iter(day.corners))
+        corner = self.corner if self.corner in day.corners else next(iter(day.corners))
         self.select_corner(corner)
 
     def show_message(self, title: str, text: str):
         self.day = None
         self.title.setText(title)
+        self.nav["prev"].hide()
+        self.nav["next"].hide()
         for b in self.tab_btns.values():
             b.hide()
         self.tags.hide()
