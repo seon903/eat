@@ -43,6 +43,7 @@ class Character(QWidget):
         self._dragging = False
         self._shake_t = 0
         self.shake_timer = QTimer(self, interval=30, timeout=self._shake_step)
+        self.wiggle_timer = QTimer(self, interval=25, timeout=self._wiggle_step)
         self.setCursor(Qt.PointingHandCursor)
 
     # -- 이미지
@@ -98,6 +99,23 @@ class Character(QWidget):
     def start_shake(self):
         self._shake_t = 0
         self.shake_timer.start()
+
+    def wiggle(self):
+        """클릭했을 때 살짝 흔들기."""
+        if self.shake_timer.isActive():
+            return
+        self._wiggle_t = 0
+        self.wiggle_timer.start()
+
+    def _wiggle_step(self):
+        self._wiggle_t += 1
+        t = self._wiggle_t
+        if t > 12:
+            self.wiggle_timer.stop()
+            self.label.move(PAD, PAD)
+            return
+        dx = round(3 * math.sin(t * 1.6) * (1 - t / 13))
+        self.label.move(PAD + dx, PAD)
 
     def stop_shake(self):
         self.shake_timer.stop()
@@ -157,6 +175,7 @@ class Controller:
         self.char = Character(self)
         self.menu_bubble = MenuBubble()
         self.menu_bubble.heart_toggled.connect(self.on_heart)
+        self.menu_bubble.holiday_shown.connect(self.play_fireworks)
         self.shout = ShoutBubble()
         self.shout.clicked.connect(self.on_click)
         self.fireworks = Fireworks()
@@ -182,7 +201,7 @@ class Controller:
     def _build_tray(self):
         self.tray_menu = QMenu()
         for text, fn in (
-            ("오늘 메뉴 보기", lambda: self.show_menu(browse=True)),
+            ("오늘 메뉴 보기", lambda: self.show_menu()),
             ("설정", self.open_settings),
             ("엑셀 다시 불러오기", lambda: self.reload_excel(force=True, notify=True)),
             ("알림 테스트", self.start_alarm),
@@ -241,20 +260,10 @@ class Controller:
             self.restore_mood()
 
     def day_state(self) -> str:
-        """menu / holiday / stale / nofile"""
-        today = dt.date.today()
+        """menu / holiday / nofile  (엑셀에 오늘 메뉴가 없으면 휴일)"""
         if not self.menus:
             return "nofile"
-        if today in self.menus:
-            return "menu"
-        if today.weekday() >= 5:
-            return "holiday"
-        dates = sorted(self.menus)
-        week_start = dates[0] - dt.timedelta(days=dates[0].weekday())
-        week_end = dates[-1] + dt.timedelta(days=6 - dates[-1].weekday())
-        if week_start <= today <= week_end:
-            return "holiday"  # 식단표 주간에 포함되는데 오늘 칸이 없음 = 휴일
-        return "stale"
+        return "menu" if dt.date.today() in self.menus else "holiday"
 
     # ---------------------------------------------------------- 표정
     def restore_mood(self):
@@ -278,26 +287,16 @@ class Controller:
             return  # 열린 말풍선을 닫으려고 누른 클릭
         if self.alarm_active:
             self.stop_alarm()
-            self.show_menu()
-            return
-        if self.day_state() == "holiday" and not self.shout.isVisible():
-            self.celebrate_holiday()  # 휴일: 첫 클릭은 폭죽, 한 번 더 누르면 다른 날 메뉴
-            return
-        self.show_menu(browse=True)
+        else:
+            self.char.wiggle()
+        self.show_menu()
 
-    def show_menu(self, browse=False):
+    def show_menu(self):
         self.shout.hide()
-        state = self.day_state()
-        if state == "holiday" and not browse:
-            self.celebrate_holiday()
-            return
         b = self.menu_bubble
         today = dt.date.today()
-        if state in ("menu", "holiday"):
+        if self.menus:
             b.show_days(self.menus, today, self.hearts, self.cfg["default_corner"], today)
-        elif state == "stale":
-            b.show_message("📅 새 식단표가 필요해요",
-                           "엑셀에 오늘 날짜가 없어요.\n이번 주 식단표를 폴더에 넣어주세요!")
         elif self.error:
             b.show_message("😵 엑셀을 읽지 못했어요", self.error)
         else:
@@ -318,9 +317,13 @@ class Controller:
             self.shout_timer.stop()
 
     def celebrate_holiday(self):
+        """프로그램 시작 시 오늘이 휴일이면 한 번 축하."""
         self.menu_bubble.hide()
         self.char.set_mood("holiday")
-        self.shout_text("오늘은 휴일!! 🎉", 18, "#e2557f", 5000)
+        self.shout_text("회사 안 나오는 날! 🎉", 16, "#e2557f", 5000)
+        self.play_fireworks()
+
+    def play_fireworks(self):
         self.fireworks.play(self.char.geometry().center())
         self.char.raise_()
 
@@ -356,7 +359,7 @@ class Controller:
         self.mood_timer.stop()
         self.char.set_mood("excited")
         self.char.start_shake()
-        self.shout_text("밥!!!", 26, "#ff6a3d", 0)
+        self.shout_text("밥!!!", 26, "#000000", 0)
         QApplication.beep()
         self.alarm_end_timer.start(60_000)
 
