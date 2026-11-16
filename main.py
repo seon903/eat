@@ -182,7 +182,7 @@ class Controller:
     def _build_tray(self):
         self.tray_menu = QMenu()
         for text, fn in (
-            ("오늘 메뉴 보기", self.show_menu),
+            ("오늘 메뉴 보기", lambda: self.show_menu(browse=True)),
             ("설정", self.open_settings),
             ("엑셀 다시 불러오기", lambda: self.reload_excel(force=True, notify=True)),
             ("알림 테스트", self.start_alarm),
@@ -280,20 +280,21 @@ class Controller:
             self.stop_alarm()
             self.show_menu()
             return
-        if self.day_state() == "holiday":
-            self.celebrate_holiday()
+        if self.day_state() == "holiday" and not self.shout.isVisible():
+            self.celebrate_holiday()  # 휴일: 첫 클릭은 폭죽, 한 번 더 누르면 다른 날 메뉴
             return
-        self.show_menu()
+        self.show_menu(browse=True)
 
-    def show_menu(self):
+    def show_menu(self, browse=False):
         self.shout.hide()
         state = self.day_state()
-        if state == "holiday":
+        if state == "holiday" and not browse:
             self.celebrate_holiday()
             return
         b = self.menu_bubble
-        if state == "menu":
-            b.show_day(self.menus[dt.date.today()], self.hearts, self.cfg["default_corner"])
+        today = dt.date.today()
+        if state in ("menu", "holiday"):
+            b.show_days(self.menus, today, self.hearts, self.cfg["default_corner"], today)
         elif state == "stale":
             b.show_message("📅 새 식단표가 필요해요",
                            "엑셀에 오늘 날짜가 없어요.\n이번 주 식단표를 폴더에 넣어주세요!")
